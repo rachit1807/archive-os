@@ -4,6 +4,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {randomUUID,timingSafeEqual} from 'node:crypto';
 import {Store} from './storage.js';
+import {transition} from './lifecycle.js';
 import {pool,PostgresStore,initialize} from './postgres.js';
 import {session,accountAction,logout} from './auth.js';
 const root=path.dirname(fileURLToPath(import.meta.url));
@@ -33,10 +34,12 @@ export const server=http.createServer(async(req,res)=>{
  const user=pool?await session(req):null;if(pool&&!user)return send(401,{error:'Sign in to access your private vault.'});
  const store=pool?new PostgresStore(user.id):localStore;
  if(url.pathname==='/api/items'&&req.method==='GET')return send(200,await store.read());
- if(url.pathname==='/api/items'&&req.method==='POST'){const b=validate(await body(req));const item={...b,id:randomUUID(),createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),history:[]};await store.transact(d=>d.items.unshift(item));return send(201,item);}
+ if(url.pathname==='/api/items'&&req.method==='POST'){const b=validate(await body(req));const item={...b,id:randomUUID(),createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),history:[{action:'Cataloged',at:new Date().toISOString(),location:b.location,condition:b.condition}]};await store.transact(d=>d.items.unshift(item));return send(201,item);}
  if(url.pathname==='/api/import'&&req.method==='POST'){const b=await body(req);if(b.version!==1||!Array.isArray(b.items)||b.items.length>5000)throw Error('Choose an ArchiveOS export with at most 5,000 items');const items=b.items.map(x=>({...validate(x),id:randomUUID(),createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),history:[]}));await store.transact(d=>d.items.push(...items));return send(200,{imported:items.length});}
+ const actionRoute=url.pathname.match(/^\/api\/items\/([\w-]+)\/actions$/);
+ if(actionRoute&&req.method==='POST'){const input=await body(req);const result=await store.transact(d=>{const i=d.items.findIndex(x=>x.id===actionRoute[1]);if(i<0){const e=Error('Object not found');e.status=404;throw e;}return d.items[i]=transition(d.items[i],input);});return send(200,result);}
  const m=url.pathname.match(/^\/api\/items\/([\w-]+)$/);
- if(m&&['PUT','DELETE'].includes(req.method)){const b=req.method==='PUT'?validate(await body(req)):null;const result=await store.transact(d=>{const i=d.items.findIndex(x=>x.id===m[1]);if(i<0){const e=Error('Item not found');e.status=404;throw e;}if(!b)return d.items.splice(i,1)[0];const old=d.items[i];const history=[...(old.history||[])];if(old.borrower!==b.borrower)history.push({borrower:old.borrower||b.borrower,action:b.borrower?'Lent':'Returned',at:new Date().toISOString()});return d.items[i]={...old,...b,history,updatedAt:new Date().toISOString()};});return send(200,result);}
+ if(m&&['PUT','DELETE'].includes(req.method)){const b=req.method==='PUT'?validate(await body(req)):null;const result=await store.transact(d=>{const i=d.items.findIndex(x=>x.id===m[1]);if(i<0){const e=Error('Item not found');e.status=404;throw e;}if(!b)return d.items.splice(i,1)[0];const old=d.items[i];if(['borrower','due','location','condition'].some(k=>old[k]!==b[k])){const e=Error('Use the object action to change custody, location, or condition');e.status=409;throw e;}const history=[...(old.history||[])];if(old.borrower!==b.borrower)history.push({borrower:old.borrower||b.borrower,action:b.borrower?'Lent':'Returned',at:new Date().toISOString()});return d.items[i]={...old,...b,history,updatedAt:new Date().toISOString()};});return send(200,result);}
  return send(404,{error:'Endpoint not found'});
  }
  if(!['GET','HEAD'].includes(req.method))return send(405,{error:'Method not allowed'});

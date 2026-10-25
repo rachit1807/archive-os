@@ -27,10 +27,20 @@ A personal collection and lending command center with an emerald reactor aesthet
 
 ArchiveOS gives books, technology, collectibles, and games a permanent home. Register possessions, organize the details, record loans, and keep track of what should come back. The interface combines gunmetal surfaces, emerald illumination, a geometric mask, animated rune orbits, and restrained typography.
 
+## Object workflow
+
+1. **Catalog an object:** record its identity, category, value, and starting condition.
+2. **Assign its physical home:** record the room, cabinet, or shelf where it belongs.
+3. **Lend it:** capture the borrower and expected return date at handover.
+4. **Receive and inspect:** confirm the condition and storage location before completing the return.
+5. **Follow its history:** open the Object Passport to see cataloging, locations, loans, returns, inspection notes, and dates.
+
+The **Attention** queue collects overdue objects, objects without a home, and objects needing care. Objects on loan cannot be relocated or inspected until received. Objects needing care cannot be lent until a new inspection resolves their condition. Catalog corrections cannot bypass these circulation rules.
+
 ## Features
 
 - **Collection management:** create, edit, delete, and favorite items; record category, condition, location, value, description, and tags.
-- **Lending:** borrower and return-date records, overdue indicators, one-click returns, and recent lending history.
+- **Lending:** borrower and return-date records, overdue indicators, guided return inspections, and a permanent object timeline.
 - **Discovery:** live search, category filters, and sorting by name, value, or date.
 - **Overview:** inventory count, total estimated value, active loans, and overdue returns.
 - **Portability:** JSON export and validated import; imported records receive fresh identifiers.
@@ -88,6 +98,7 @@ archive.json.tmp → atomic rename → archive.json
 | --- | --- |
 | `public/` | Interface, original vector artwork, theme, and interactions |
 | `server.js` | HTTP routes, validation, optional authentication, static assets |
+| `lifecycle.js` | Validated custody, location, and condition transitions |
 | `auth.js` | Scrypt password hashing, expiring opaque sessions, account access |
 | `postgres.js` | Dedicated cloud storage and transactional per-account mutations |
 | `storage.js` | File reads, write queue, backups, atomic persistence |
@@ -106,7 +117,8 @@ archive.json.tmp → atomic rename → archive.json
 | GET | `/api/health` | Service health |
 | GET | `/api/items` | Read the archive |
 | POST | `/api/items` | Create an item |
-| PUT | `/api/items/:id` | Update an item |
+| PUT | `/api/items/:id` | Correct catalog metadata |
+| POST | `/api/items/:id/actions` | Locate, lend, receive, or inspect an object |
 | DELETE | `/api/items/:id` | Delete an item |
 | POST | `/api/import` | Append a validated version-1 export |
 

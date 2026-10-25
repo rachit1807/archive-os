@@ -19,6 +19,10 @@ A personal collection and lending command center with an emerald reactor aesthet
 
 </div>
 
+**[Open live app](https://archive-os-rachit.onrender.com)** · **[Source code](https://github.com/rachit1807/archive-os)**
+
+![ArchiveOS emerald command deck](docs/preview.png)
+
 ## Overview
 
 ArchiveOS gives books, technology, collectibles, and games a permanent home. Register possessions, organize the details, record loans, and keep track of what should come back. The interface combines gunmetal surfaces, emerald illumination, a geometric mask, animated rune orbits, and restrained typography.
@@ -52,6 +56,8 @@ npm test      # Storage durability and recovery safeguards
 ```
 
 Start with an empty vault or choose **Load sample collection**. Sample data is fictional and is stored in the same vault as regular items.
+
+The cloud integration test runs only when `ARCHIVE_TEST_DATABASE_URL` points to a dedicated test-capable database; it creates and removes synthetic test accounts. It covers private vault isolation, authentication, session revocation, and persistent records.
 
 ## Configuration
 

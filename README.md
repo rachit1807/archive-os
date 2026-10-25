@@ -12,6 +12,9 @@ A personal collection and lending command center with an emerald reactor aesthet
 <img src="https://cdn.simpleicons.org/css/663399" width="38" alt="CSS" /> &nbsp;
 <img src="https://cdn.simpleicons.org/docker/2496ED" width="38" alt="Docker" /> &nbsp;
 <img src="https://cdn.simpleicons.org/githubactions/2088FF" width="38" alt="GitHub Actions" />
+<img src="https://cdn.simpleicons.org/postgresql/4169E1" width="38" alt="PostgreSQL" /> &nbsp;
+<img src="https://cdn.simpleicons.org/neon/00E599" width="38" alt="Neon" /> &nbsp;
+<img src="https://cdn.simpleicons.org/render/46E3B7" width="38" alt="Render" />
 </p>
 
 </div>
@@ -29,17 +32,19 @@ ArchiveOS gives books, technology, collectibles, and games a permanent home. Reg
 - **Portability:** JSON export and validated import; imported records receive fresh identifiers.
 - **Durability:** server-side JSON text storage, serialized mutations, atomic replacement, and a previous-version backup.
 - **Appearance:** persistent light/dark preference, responsive navigation and cards, keyboard focus states, and reduced-motion support.
-- **Developer workflow:** no runtime dependencies, native Node.js tests, Docker support, and CI.
+- **Developer workflow:** a small dependency footprint, native Node.js tests, Docker support, and CI.
+- **Private cloud accounts:** registration, sign-in, sign-out, hashed passwords, HttpOnly session cookies, and account-isolated collections.
 
 ## Run locally
 
 Requires **Node.js 22 or newer**.
 
 ```sh
+npm ci
 npm start
 ```
 
-Open **http://localhost:3000**. No dependency installation or build step is required.
+Open **http://localhost:3000**. Run `npm ci` once before starting. No frontend build step is required.
 
 ```sh
 npm run dev   # Restart the server when server files change
@@ -54,9 +59,10 @@ Start with an empty vault or choose **Load sample collection**. Sample data is f
 | --- | --- | --- |
 | `PORT` | `3000` | HTTP listening port |
 | `DATA_DIR` | `./data` | Directory for persistent archive files |
+| `DATABASE_URL` | unset | Dedicated PostgreSQL connection; enables private cloud accounts |
 | `ARCHIVE_PASSWORD` | unset | Optional HTTP Basic protection for API routes; username is `archive` |
 
-Set a strong `ARCHIVE_PASSWORD` before exposing a personal vault to the internet. Use HTTPS in production. Without a password, anyone who can access the server can read and modify its collection. This is a single-owner application, not a multi-tenant account system.
+Use a dedicated `DATABASE_URL` and HTTPS for hosted use. Local file mode is unauthenticated unless protected with `ARCHIVE_PASSWORD`; keep it on a trusted computer. Local file mode is a single-owner workspace. When `DATABASE_URL` is configured, the hosted app requires registration/sign-in and isolates each account’s records.
 
 ## Architecture
 
@@ -76,6 +82,8 @@ archive.json.tmp → atomic rename → archive.json
 | --- | --- |
 | `public/` | Interface, original vector artwork, theme, and interactions |
 | `server.js` | HTTP routes, validation, optional authentication, static assets |
+| `auth.js` | Scrypt password hashing, expiring opaque sessions, account access |
+| `postgres.js` | Dedicated cloud storage and transactional per-account mutations |
 | `storage.js` | File reads, write queue, backups, atomic persistence |
 | `test/` | Automated storage tests |
 | `.github/workflows/ci.yml` | Continuous verification |
@@ -85,6 +93,10 @@ archive.json.tmp → atomic rename → archive.json
 
 | Method | Route | Action |
 | --- | --- | --- |
+| POST | `/api/auth/register` | Create a cloud account |
+| POST | `/api/auth/login` | Sign in |
+| GET | `/api/auth/me` | Read session state |
+| POST | `/api/auth/logout` | Revoke current session |
 | GET | `/api/health` | Service health |
 | GET | `/api/items` | Read the archive |
 | POST | `/api/items` | Create an item |
@@ -104,7 +116,11 @@ The write queue protects one server process. Run **one instance** against the da
 
 ## Deployment
 
-Run this app as a persistent Node.js service or container. Mount a persistent disk and set `DATA_DIR` to that mount. Ephemeral filesystems lose records on redeploy; static hosting and GitHub Pages cannot run the backend.
+The hosted configuration uses a free Render Node.js service and a separate Neon PostgreSQL project in Singapore. Its production branch has **no scheduled expiry**. Free-plan quotas apply, and Render may sleep after inactivity. Existing project databases are not used or changed.
+
+Set `DATABASE_URL` with TLS enabled and `NODE_ENV=production`. The app initializes its own tables. Cloud mutations use PostgreSQL transactions and row locks; sessions are stored durably and expire after seven days. Local file data is not automatically uploaded: export it, sign in to the cloud app, and import the JSON.
+
+For file-based hosting instead, mount a persistent disk and set `DATA_DIR` to that mount. Ephemeral filesystems lose local records on redeploy; static hosting and GitHub Pages cannot run the backend.
 
 ```sh
 docker build -t archive-os .
@@ -116,6 +132,10 @@ The Docker command forwards `ARCHIVE_PASSWORD` from your shell environment. Set 
 ## Accessibility and motion
 
 Semantic controls, labeled forms, visible focus indicators, native modal dialogs, and live status messages support keyboard use. Decorative effects are hidden from assistive technology. Animations stop when the operating system requests reduced motion.
+
+## Account limitations
+
+Passwords require 10–128 characters. Password reset and email verification are not implemented. Use a password manager and export important collections independently. The built-in authentication attempt limiter is per server process; larger deployments should add a shared limiter and account recovery.
 
 ## Design notes
 

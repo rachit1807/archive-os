@@ -4,8 +4,10 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {randomUUID,timingSafeEqual} from 'node:crypto';
 import {Store} from './storage.js';
+import {pool,PostgresStore,initialize} from './postgres.js';
+import {session,accountAction,logout} from './auth.js';
 const root=path.dirname(fileURLToPath(import.meta.url));
-const store=new Store(process.env.DATA_DIR||path.join(root,'data'));
+const localStore=new Store(process.env.DATA_DIR||path.join(root,'data'));
 const categories=['Books','Technology','Collectibles','Games','Other'];
 function validate(b) {
  if(!b||typeof b!=='object'||Array.isArray(b))throw Error('Expected an item object');
@@ -24,7 +26,12 @@ export const server=http.createServer(async(req,res)=>{
  if(api){
  if(process.env.ARCHIVE_PASSWORD){const expected=Buffer.from('Basic '+Buffer.from('archive:'+process.env.ARCHIVE_PASSWORD).toString('base64'));const actual=Buffer.from(req.headers.authorization||'');if(actual.length!==expected.length||!timingSafeEqual(actual,expected)){res.setHeader('WWW-Authenticate','Basic realm="ArchiveOS", charset="UTF-8"');return send(401,{error:'Authentication required'});}}
  if(!['GET','HEAD'].includes(req.method)&&req.headers.origin&&req.headers.origin!==`http://${req.headers.host}`&&req.headers.origin!==`https://${req.headers.host}`)return send(403,{error:'Origin rejected'});
- if(url.pathname==='/api/health')return send(200,{status:'ok'});
+ if(url.pathname==='/api/health'){if(pool)await initialize();return send(200,{status:'ok',storage:pool?'postgresql':'file'});}
+ if(url.pathname==='/api/auth/me'&&req.method==='GET'){const user=pool?await session(req):null;return send(200,{required:Boolean(pool),user:user?{email:user.email}:null});}
+ if(pool&&['/api/auth/register','/api/auth/login'].includes(url.pathname)&&req.method==='POST')return send(200,await accountAction(req,res,url.pathname.split('/').pop(),await body(req)));
+ if(pool&&url.pathname==='/api/auth/logout'&&req.method==='POST'){await logout(req,res);return send(200,{ok:true});}
+ const user=pool?await session(req):null;if(pool&&!user)return send(401,{error:'Sign in to access your private vault.'});
+ const store=pool?new PostgresStore(user.id):localStore;
  if(url.pathname==='/api/items'&&req.method==='GET')return send(200,await store.read());
  if(url.pathname==='/api/items'&&req.method==='POST'){const b=validate(await body(req));const item={...b,id:randomUUID(),createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),history:[]};await store.transact(d=>d.items.unshift(item));return send(201,item);}
  if(url.pathname==='/api/import'&&req.method==='POST'){const b=await body(req);if(b.version!==1||!Array.isArray(b.items)||b.items.length>5000)throw Error('Choose an ArchiveOS export with at most 5,000 items');const items=b.items.map(x=>({...validate(x),id:randomUUID(),createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),history:[]}));await store.transact(d=>d.items.push(...items));return send(200,{imported:items.length});}
@@ -35,6 +42,8 @@ export const server=http.createServer(async(req,res)=>{
  if(!['GET','HEAD'].includes(req.method))return send(405,{error:'Method not allowed'});
  const file=url.pathname==='/'?'index.html':url.pathname.slice(1);if(!['index.html','style.css','app.js','favicon.svg'].includes(file))return send(404,{error:'Not found'});
  const data=await readFile(path.join(root,'public',file));res.writeHead(200,{'Content-Type':({'html':'text/html','css':'text/css','js':'text/javascript','svg':'image/svg+xml'})[file.split('.').pop()]});res.end(req.method==='HEAD'?undefined:data);
- }catch(e){send(e.status||(e.message.includes('Archive cannot')?503:400),{error:e.message});}
+ }catch(e){const internal=Boolean(e.code)||e.message.includes('connect')||e.message.includes('timeout');if(internal)console.error('Request failed:',e.code||'connection error');send(e.status||(internal||e.message.includes('Archive cannot')?503:400),{error:internal?'Storage is temporarily unavailable. Please retry.':e.message});}
 });
 if(process.argv[1]===fileURLToPath(import.meta.url))server.listen(Number(process.env.PORT)||3000,'0.0.0.0',()=>console.log('ArchiveOS running at http://localhost:'+(process.env.PORT||3000)));
+
+process.on('SIGTERM',()=>{server.close(async()=>{if(pool)await pool.end();process.exit(0);});setTimeout(()=>process.exit(1),25000).unref();});
